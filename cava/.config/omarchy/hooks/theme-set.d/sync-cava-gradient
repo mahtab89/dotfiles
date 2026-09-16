@@ -1,0 +1,108 @@
+#!/bin/bash
+
+CAVA_CONFIG="$HOME/.config/cava/config"
+
+ACCENT=$(omarchy-theme-color accent 2>/dev/null)
+CYAN=$(omarchy-theme-color cyan 2>/dev/null)
+BLUE=$(omarchy-theme-color blue 2>/dev/null)
+PURPLE=$(omarchy-theme-color purple 2>/dev/null)
+
+valid_color() {
+    [[ "$1" =~ ^#[0-9a-fA-F]{6}$ ]]
+}
+
+valid_color "$ACCENT" || exit 0
+
+# Pick a related color for the other end of the gradient.
+if valid_color "$CYAN" && [[ "$CYAN" != "$ACCENT" ]]; then
+    END="$CYAN"
+elif valid_color "$BLUE" && [[ "$BLUE" != "$ACCENT" ]]; then
+    END="$BLUE"
+elif valid_color "$PURPLE" && [[ "$PURPLE" != "$ACCENT" ]]; then
+    END="$PURPLE"
+else
+    END="$ACCENT"
+fi
+
+hex_to_rgb() {
+    local hex="${1#\#}"
+
+    printf '%d %d %d\n' \
+        "$((16#${hex:0:2}))" \
+        "$((16#${hex:2:2}))" \
+        "$((16#${hex:4:2}))"
+}
+
+read -r R1 G1 B1 <<< "$(hex_to_rgb "$ACCENT")"
+read -r R2 G2 B2 <<< "$(hex_to_rgb "$END")"
+
+interpolate() {
+    local step="$1"
+    local total=7
+
+    local r=$((R1 + (R2 - R1) * step / total))
+    local g=$((G1 + (G2 - G1) * step / total))
+    local b=$((B1 + (B2 - B1) * step / total))
+
+    printf '#%02x%02x%02x' "$r" "$g" "$b"
+}
+
+C1=$(interpolate 0)
+C2=$(interpolate 1)
+C3=$(interpolate 2)
+C4=$(interpolate 3)
+C5=$(interpolate 4)
+C6=$(interpolate 5)
+C7=$(interpolate 6)
+C8=$(interpolate 7)
+
+export C1 C2 C3 C4 C5 C6 C7 C8
+
+python3 - "$CAVA_CONFIG" <<'PY'
+import os
+import re
+import sys
+
+path = sys.argv[1]
+
+with open(path, "r") as f:
+    text = f.read()
+
+# Only modify the [color] section.
+match = re.search(
+    r"(?ms)^\[color\]\s*$.*?(?=^\[[^]]+\]\s*$|\Z)",
+    text
+)
+
+if not match:
+    sys.exit(0)
+
+section = match.group(0)
+
+values = {
+    "gradient": "1",
+    "gradient_color_1": os.environ["C1"],
+    "gradient_color_2": os.environ["C2"],
+    "gradient_color_3": os.environ["C3"],
+    "gradient_color_4": os.environ["C4"],
+    "gradient_color_5": os.environ["C5"],
+    "gradient_color_6": os.environ["C6"],
+    "gradient_color_7": os.environ["C7"],
+    "gradient_color_8": os.environ["C8"],
+}
+
+for key, value in values.items():
+    pattern = rf"(?m)^[ \t]*;?[ \t]*{re.escape(key)}[ \t]*=.*$"
+
+    replacement = f"{key} = '{value}'" if key != "gradient" else f"{key} = {value}"
+
+    if re.search(pattern, section):
+        section = re.sub(pattern, replacement, section, count=1)
+    else:
+        section += f"{replacement}\n"
+
+text = text[:match.start()] + section + text[match.end():]
+
+with open(path, "w") as f:
+    f.write(text)
+PY
