@@ -1,0 +1,23 @@
+#!/bin/bash
+
+THEME="$1"
+WALLPAPER_DIR="$HOME/.config/omarchy/live-wallpapers"
+
+# Stop any currently running live wallpaper.
+pkill -x mpvpaper 2>/dev/null || true
+
+# Find a live wallpaper matching the selected theme name.
+for VIDEO in \
+    "$WALLPAPER_DIR/$THEME.mp4" \
+    "$WALLPAPER_DIR/$THEME.webm" \
+    "$WALLPAPER_DIR/$THEME.mkv"
+do
+    if [[ -f "$VIDEO" ]]; then
+        mpvpaper -o "loop-file=inf --no-audio" '*' "$VIDEO" >/dev/null 2>&1 &
+        exit 0
+    fi
+done
+
+# No matching video:
+# Omarchy's normal static wallpaper remains in control.
+exit 0
